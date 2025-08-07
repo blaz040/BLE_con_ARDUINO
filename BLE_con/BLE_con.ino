@@ -15,11 +15,13 @@
 #define BLE_base_UUID 0x1000800000805F9B34FB
 // Initialize the temperature sensor.
 Sensor temp(SENSOR_ID_TEMP);
+Sensor hum(SENSOR_ID_HUM);
 
 // Define the custom 128-bit UUIDs for your BLE service and characteristics.
 // IMPORTANT: These UUIDs must exactly match the ones you use in your MIT App Inventor app.
 const char* dataServiceUuid = "0000181A-0000-1000-8000-00805F9B34FB";
 const char* tempCharacteristicUuid = "00002A6E-0000-1000-8000-00805F9B34FB";
+const char* HumidityCharacteristicUuid = "00002A6F-0000-1000-8000-00805F9B34FB";
 
 // Define the BLE service and characteristics.
 // The dataService contains the tempCharacteristic.
@@ -28,6 +30,7 @@ BLEService dataService(dataServiceUuid);
 // The tempCharacteristic is set to be readable by the central device (BLERead)
 // and can send notifications (BLENotify) when its value changes.
 BLEShortCharacteristic tempCharacteristic(tempCharacteristicUuid, BLERead | BLENotify);
+BLEShortCharacteristic HumidityCharacteristic(HumidityCharacteristicUuid, BLERead | BLENotify);
 
 // --- CALLBACK FUNCTIONS ---
 // These functions are called automatically when a BLE event occurs.
@@ -55,7 +58,7 @@ void setup() {
   // Initialize the BHY2 sensor system and the temperature sensor
   BHY2.begin();
   temp.begin();
-  
+  hum.begin();
   // Start serial communication for debugging
   Serial.begin(9600);
   while(!Serial);
@@ -71,6 +74,7 @@ void setup() {
   BLE.setAdvertisedService(dataService);
 
   // Add the characteristic to the service.
+  dataService.addCharacteristic(HumidityCharacteristic);
   dataService.addCharacteristic(tempCharacteristic);
   
   // Add the service to the BLE peripheral.
@@ -111,9 +115,11 @@ void loop() {
     if(BLE.connected()) {
       // The central device will be notified of this change if it is subscribed.
       tempCharacteristic.writeValue(temp.value()*100);
-
+      HumidityCharacteristic.writeValue(hum.value());
+      
       // Print the value to the serial monitor for debugging.
       Serial.println(String("Temp C: ") + String(temp.value()));
+      Serial.println(String("Humidity : ") + String(hum.value()));
     }
   }
   
