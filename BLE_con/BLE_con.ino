@@ -16,21 +16,29 @@
 // Initialize the temperature sensor.
 Sensor temp(SENSOR_ID_TEMP);
 Sensor hum(SENSOR_ID_HUM);
+SensorActivity activity(SENSOR_ID_AR);
+SensorBSEC bsec(SENSOR_ID_BSEC);
 
 // Define the custom 128-bit UUIDs for your BLE service and characteristics.
-// IMPORTANT: These UUIDs must exactly match the ones you use in your MIT App Inventor app.
-const char* dataServiceUuid = "0000181A-0000-1000-8000-00805F9B34FB";
-const char* tempCharacteristicUuid = "00002A6E-0000-1000-8000-00805F9B34FB";
-const char* HumidityCharacteristicUuid = "00002A6F-0000-1000-8000-00805F9B34FB";
+const char* dataServiceUuid =             "0000181A-0000-1000-8000-00805F9B34FB";
+
+const char* temp_CharacteristicUuid =     "00002A6E-0000-1000-8000-00805F9B34FB";
+const char* Humidity_CharacteristicUuid = "00002A6F-0000-1000-8000-00805F9B34FB";
+const char* IAQ_CharacteristicUuid =      "00002AF2-0000-1000-8000-00805F9B34FB";
+const char* bVOC_CharacteristicUuid =     "00002BE7-0000-1000-8000-00805F9B34FB";
+const char* CO2_CharacteristicUuid =      "00002B8C-0000-1000-8000-00805F9B34FB";
 
 // Define the BLE service and characteristics.
-// The dataService contains the tempCharacteristic.
+// The dataService contains the temp_Characteristic.
 BLEService dataService(dataServiceUuid); 
 
-// The tempCharacteristic is set to be readable by the central device (BLERead)
+// The temp_Characteristic is set to be readable by the central device (BLERead)
 // and can send notifications (BLENotify) when its value changes.
-BLEShortCharacteristic tempCharacteristic(tempCharacteristicUuid, BLERead | BLENotify);
-BLEShortCharacteristic HumidityCharacteristic(HumidityCharacteristicUuid, BLERead | BLENotify);
+BLEFloatCharacteristic temp_Characteristic(temp_CharacteristicUuid, BLERead | BLENotify);
+BLEShortCharacteristic Humidity_Characteristic(Humidity_CharacteristicUuid, BLERead | BLENotify);
+BLEShortCharacteristic IAQ_Characteristic(IAQ_CharacteristicUuid, BLERead | BLENotify);
+BLEFloatCharacteristic bVOC_Characteristic(bVOC_CharacteristicUuid,BLERead | BLENotify);
+BLEIntCharacteristic CO2_Characteristic(CO2_CharacteristicUuid,BLERead | BLENotify);
 
 // --- CALLBACK FUNCTIONS ---
 // These functions are called automatically when a BLE event occurs.
@@ -59,6 +67,9 @@ void setup() {
   BHY2.begin();
   temp.begin();
   hum.begin();
+  activity.begin();
+  bsec.begin();
+  
   // Start serial communication for debugging
   Serial.begin(9600);
   while(!Serial);
@@ -74,16 +85,15 @@ void setup() {
   BLE.setAdvertisedService(dataService);
 
   // Add the characteristic to the service.
-  dataService.addCharacteristic(HumidityCharacteristic);
-  dataService.addCharacteristic(tempCharacteristic);
+  dataService.addCharacteristic(Humidity_Characteristic);
+  dataService.addCharacteristic(temp_Characteristic);
+  dataService.addCharacteristic(IAQ_Characteristic);
+  dataService.addCharacteristic(bVOC_Characteristic);
+  dataService.addCharacteristic(CO2_Characteristic);
   
   // Add the service to the BLE peripheral.
   BLE.addService(dataService);
-
-  // Set the initial value of the characteristic.
-  // This value will be read by the central device upon connection.
-  tempCharacteristic.writeValue(22.0);
-  
+ 
   // Set the event handlers (callbacks) for connections and disconnections.
   BLE.setEventHandler(BLEConnected, onBleConnected);
   BLE.setEventHandler(BLEDisconnected, onBleDisconnected);
@@ -114,12 +124,19 @@ void loop() {
     // The 'BLE.connected()' check is a cleaner way to see if a central is connected.
     if(BLE.connected()) {
       // The central device will be notified of this change if it is subscribed.
-      tempCharacteristic.writeValue(temp.value()*100);
-      HumidityCharacteristic.writeValue(hum.value());
+      temp_Characteristic.writeValue(temp.value());
+      Humidity_Characteristic.writeValue(hum.value());
+      IAQ_Characteristic.writeValue(bsec.iaq());
+      bVOC_Characteristic.writeValue(bsec.b_voc_eq());
+      CO2_Characteristic.writeValue(bsec.co2_eq());
       
       // Print the value to the serial monitor for debugging.
-      Serial.println(String("Temp C: ") + String(temp.value()));
+      Serial.println(String("Temp C: ") + String(sizeof(temp.value())));
       Serial.println(String("Humidity : ") + String(hum.value()));
+      Serial.println(String("IAQ : ") + String(bsec.iaq()));
+      Serial.println(String("bVOC : ") + String(bsec.b_voc_eq()));
+      Serial.println(String("CO2 : ") + String(bsec.co2_eq()));
+      Serial.println(String("Activity : ") + activity.toString());
     }
   }
   
@@ -136,7 +153,7 @@ void loop() {
   //   while (central.connected()) {
   //     BHY2.update();
   //     float tempF = 1.8 * temp.value() + 32.0;
-  //     tempCharacteristic.writeValue(tempF);
+  //     temp_Characteristic.writeValue(tempF);
   //     Serial.println("T: "+ String(tempF));
   //     delay(100);
   //   }
