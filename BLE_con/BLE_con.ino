@@ -1,165 +1,217 @@
-/* * This sketch shows how a Nicla Sense ME can act as a BLE peripheral
- * to send sensor data to a central device (like an MIT App Inventor app).
- * * The temperature sensor is enabled, and its values are periodically
- * read and sent to the central device via a BLE characteristic.
- * * This version uses a non-blocking loop with callbacks for a more reliable
- * and responsive application.
- */
-
-#include "Arduino.h"
-#include <ArduinoBLE.h>
+#include <Arduino.h>
 #include <Arduino_BHY2.h>
+#include <ArduinoBLE.h>
 #include "Nicla_System.h"
+#include <MemoryFree.h>
+
+#define PRINT(X) Serial.println(F(X));
+#define PRINT_INT(X) Serial.println(X);
+
+#define PRINT_2(X, Y) Serial.print(F(X)); Serial.println(Y);
+#define PRINT_3_HEX(X,Y,Z) Serial.print(X,16); Serial.print(F(Y)); Serial.println(Z,16);
+
+//=================================UUIDS===============================================
+const char* envServiceUuid =                      "0000181A-0000-1000-8000-00805F9B34FB";
+const char* otherServiceUuid =                    "00001000-0000-1000-8000-00805F9B34FB";
+
+const char* temp_CharacteristicUuid =             "00002A6E-0000-1000-8000-00805F9B34FB";
+const char* Humidity_CharacteristicUuid =         "00002A6F-0000-1000-8000-00805F9B34FB";
+const char* IAQ_CharacteristicUuid =              "00002AF2-0000-1000-8000-00805F9B34FB";
+const char* bVOC_CharacteristicUuid =             "00002BE7-0000-1000-8000-00805F9B34FB";
+const char* CO2_CharacteristicUuid =              "00002B8C-0000-1000-8000-00805F9B34FB";
+const char* Pressure_CharacteristicUuid =         "00002780-0000-1000-8000-00805F9B34FB";
+const char* Step_CharacteristicUuid =             "000027BA-0000-1000-8000-00805F9B34FB";
+const char* messageReceiver_CharacteristicUuid =  "00001001-0000-1000-8000-00805F9B34FB";
 
 
-#define BLE_base_UUID 0x1000800000805F9B34FB
-// Initialize the temperature sensor.
+//=================================Sensors=====================================================
 Sensor temp(SENSOR_ID_TEMP);
-Sensor hum(SENSOR_ID_HUM);
+Sensor humidity(SENSOR_ID_HUM);
+Sensor pressure(SENSOR_ID_BARO);
 SensorActivity activity(SENSOR_ID_AR);
 SensorBSEC bsec(SENSOR_ID_BSEC);
+Sensor stepCounter(SENSOR_ID_STC);
 
-// Define the custom 128-bit UUIDs for your BLE service and characteristics.
-const char* dataServiceUuid =             "0000181A-0000-1000-8000-00805F9B34FB";
+//=================================BLE-Service-Characteristics=====================================================
+BLEService envService(envServiceUuid);
 
-const char* temp_CharacteristicUuid =     "00002A6E-0000-1000-8000-00805F9B34FB";
-const char* Humidity_CharacteristicUuid = "00002A6F-0000-1000-8000-00805F9B34FB";
-const char* IAQ_CharacteristicUuid =      "00002AF2-0000-1000-8000-00805F9B34FB";
-const char* bVOC_CharacteristicUuid =     "00002BE7-0000-1000-8000-00805F9B34FB";
-const char* CO2_CharacteristicUuid =      "00002B8C-0000-1000-8000-00805F9B34FB";
-
-// Define the BLE service and characteristics.
-// The dataService contains the temp_Characteristic.
-BLEService dataService(dataServiceUuid); 
-
-// The temp_Characteristic is set to be readable by the central device (BLERead)
-// and can send notifications (BLENotify) when its value changes.
-BLEFloatCharacteristic temp_Characteristic(temp_CharacteristicUuid, BLERead | BLENotify);
+BLEShortCharacteristic temp_Characteristic(temp_CharacteristicUuid, BLERead | BLENotify);
 BLEShortCharacteristic Humidity_Characteristic(Humidity_CharacteristicUuid, BLERead | BLENotify);
 BLEShortCharacteristic IAQ_Characteristic(IAQ_CharacteristicUuid, BLERead | BLENotify);
-BLEFloatCharacteristic bVOC_Characteristic(bVOC_CharacteristicUuid,BLERead | BLENotify);
-BLEIntCharacteristic CO2_Characteristic(CO2_CharacteristicUuid,BLERead | BLENotify);
+BLEShortCharacteristic CO2_Characteristic(CO2_CharacteristicUuid,BLERead | BLENotify);
+BLEShortCharacteristic Pressure_Characteristic(Pressure_CharacteristicUuid,BLERead | BLENotify);
 
-// --- CALLBACK FUNCTIONS ---
-// These functions are called automatically when a BLE event occurs.
+BLEService otherService(otherServiceUuid);
 
-// Callback for when a central device connects.
+BLEShortCharacteristic bVOC_Characteristic(bVOC_CharacteristicUuid, BLERead | BLENotify);
+BLEShortCharacteristic Step_Characteristic(Step_CharacteristicUuid, BLERead | BLENotify);
+BLEShortCharacteristic messageReceiver(messageReceiver_CharacteristicUuid, BLEWrite | BLENotify);
+
+
+//=======================variable definitions==================================
+bool run = false;
+bool advertising = false;
+
+const short sensorWaitms = 1000;
+const short blinkWaitms = 300;
+
+unsigned long lastSensorUpdate = 0;
+unsigned long lastBlink_run = 0;
+unsigned long lastBlink_advertise = 0;
+
+//=======================function definitions==================================
+void start();
+void stop();
+void restart();
+void LED_setColor(RGBColors);
+
+//=======================CallBacks==================================
+
+//for when a central device connects.
 void onBleConnected(BLEDevice central) {
-  Serial.print("Connected to central: ");
-  nicla::leds.setColor(blue); // Turn on the blue LED to show a connection
-  Serial.println(central.address());
+  PRINT_2("Connected to central: ",central.address());
+  advertising = false;
+  LED_setColor(blue);
+}
+void onBleDisconnected(BLEDevice central) {
+
+  PRINT_2("Disconnected from central: ",central.address());
+  stop();
+  LED_setColor(red);
+  BLE.advertise();
+  advertising = true;
 }
 
-// Callback for when a central device disconnects.
-void onBleDisconnected(BLEDevice central) {
-  Serial.print("Disconnected from central: ");
-  nicla::leds.setColor(red); // Turn on the red LED to show disconnection
-  Serial.println(central.address());
+// callback for message received
+void onMessageReceived(BLEDevice central, BLECharacteristic characteristic) {
+  if (characteristic.written()) {
+    switch (messageReceiver.value()) {
+      case 1: start(); break;
+      case 2: stop(); break;
+      case 3: restart(); break;
+      default: PRINT_2("Unrecognized message.... : ", messageReceiver.value()); break;
+    }
+    PRINT_2("Message Received: ",messageReceiver.value());
+  }
 }
+
+//==========================Run functions==============================================
+void start(){
+  run = true;
+}
+void stop(){
+  run = false;
+  LED_setColor(blue);
+}
+void restart(){
+  stop();
+  // TODO restart stuff
+  start();
+}
+
+void blink(RGBColors color) {
+  static bool state = false;
+  if (state) {
+    LED_setColor(off);
+    state = !state;
+  } else {
+    LED_setColor(color);
+    state = !state;
+  }
+}
+void LED_setColor(RGBColors color){
+  nicla::leds.setColor(color);
+}
+
+//=======================Setup and loop==================================
 
 void setup() {
-  // Initialize Nicla's core systems and LEDs
+  Serial.begin(115200);
+  while (!Serial);
+  PRINT("Waiting");
+  delay(3000); // wait for device to connect through USB
+
+  Serial.println("-------------------------------------------");
+  printThreadStacks();
+  Serial.println("-------------------------------------------");
+
+  PRINT("Nicla LED init...."); 
   nicla::begin();
   nicla::leds.begin();
-  nicla::leds.setColor(off); // Start with LEDs off
+  LED_setColor(red);
+  printFreeRAM();
 
-  // Initialize the BHY2 sensor system and the temperature sensor
-  BHY2.begin();
-  temp.begin();
-  hum.begin();
-  activity.begin();
-  bsec.begin();
-  
-  // Start serial communication for debugging
-  Serial.begin(9600);
-  while(!Serial);
+  PRINT("Sensors...."); printFreeRAM();
+  BHY2.begin(NICLA_BLE);printFreeRAM();
+  temp.begin();printFreeRAM();
+  humidity.begin();printFreeRAM();
+  pressure.begin();printFreeRAM();
+  activity.begin();printFreeRAM();
+  bsec.begin();printFreeRAM();
+  stepCounter.begin();printFreeRAM();
 
-  // Initialize BLE. If it fails, halt the program.
+  PRINT("BLE....");
   if (!BLE.begin()) {
-    Serial.println("Starting BLE failed!");
+    PRINT("Starting BLE failed!");
     while (1);
   }
-
-  // Configure the BLE peripheral device.
-  BLE.setLocalName("Nicla2");
-  BLE.setAdvertisedService(dataService);
-
-  // Add the characteristic to the service.
-  dataService.addCharacteristic(Humidity_Characteristic);
-  dataService.addCharacteristic(temp_Characteristic);
-  dataService.addCharacteristic(IAQ_Characteristic);
-  dataService.addCharacteristic(bVOC_Characteristic);
-  dataService.addCharacteristic(CO2_Characteristic);
+    
+  BLE.setLocalName("Nicla");printFreeRAM();
   
-  // Add the service to the BLE peripheral.
-  BLE.addService(dataService);
- 
-  // Set the event handlers (callbacks) for connections and disconnections.
+  envService.addCharacteristic(temp_Characteristic);printFreeRAM();
+  envService.addCharacteristic(Humidity_Characteristic);printFreeRAM();
+  envService.addCharacteristic(IAQ_Characteristic);printFreeRAM();
+  envService.addCharacteristic(CO2_Characteristic);printFreeRAM();
+  envService.addCharacteristic(Pressure_Characteristic);printFreeRAM();
+
+  otherService.addCharacteristic(bVOC_Characteristic);printFreeRAM();
+  otherService.addCharacteristic(Step_Characteristic);printFreeRAM();
+  otherService.addCharacteristic(messageReceiver);printFreeRAM();
+
+  messageReceiver.setEventHandler(BLEWritten, onMessageReceived);
   BLE.setEventHandler(BLEConnected, onBleConnected);
   BLE.setEventHandler(BLEDisconnected, onBleDisconnected);
-
+  
+  PRINT("Adding Services");printFreeRAM();
+  BLE.addService(envService);printFreeRAM();
+  BLE.addService(otherService);printFreeRAM();
+  BLE.setAdvertisedService(envService);printFreeRAM();
+  
   // Start advertising the BLE service.
   BLE.advertise();
-
-  Serial.println("Bluetooth device active, waiting for connections...");
-  Serial.println("Blue LED = Connected, Red LED = Disconnected");
+  advertising = true;
+  PRINT("=== Nicla Sense ME Memory Monitor ===");
 }
 
 void loop() {
-    // BLE.poll() allows the BLE library to process events (like connections)
-  // and run our callback functions without blocking the main loop.
-  BLE.poll(); 
- 
-  // Store the last time we printed and updated the characteristic.
-  static unsigned long lastUpdate = 0;
-  
-  // Update the sensor data from the BHY2 system.
-  // This needs to be done regularly to get the latest values.
+  BLE.poll();
   BHY2.update();
-  
-  // Update the characteristic and print to the serial monitor every 1 second.
-  if (millis() - lastUpdate >= 1000) {
-    lastUpdate = millis();
+  // blinking for advertising 
+  if(advertising && millis() - lastBlink_advertise >= blinkWaitms){
+    lastBlink_advertise = millis();
+    blink(blue);
+  }
 
-    // The 'BLE.connected()' check is a cleaner way to see if a central is connected.
-    if(BLE.connected()) {
-      // The central device will be notified of this change if it is subscribed.
-      temp_Characteristic.writeValue(temp.value());
-      Humidity_Characteristic.writeValue(hum.value());
+  if (run && BLE.connected() ) {
+    // blinking for transfering data
+    if (millis() - lastBlink_run >= blinkWaitms){ 
+      lastBlink_run = millis();
+      blink(green);
+    }
+
+    if (millis() - lastSensorUpdate >= sensorWaitms) {
+      lastSensorUpdate = millis();
+
+      temp_Characteristic.writeValue(temp.value()*100);
+      Humidity_Characteristic.writeValue(humidity.value());
+      Pressure_Characteristic.writeValue(pressure.value());
       IAQ_Characteristic.writeValue(bsec.iaq());
-      bVOC_Characteristic.writeValue(bsec.b_voc_eq());
+      bVOC_Characteristic.writeValue(bsec.b_voc_eq()*100);
       CO2_Characteristic.writeValue(bsec.co2_eq());
-      
-      // Print the value to the serial monitor for debugging.
-      Serial.println(String("Temp C: ") + String(sizeof(temp.value())));
-      Serial.println(String("Humidity : ") + String(hum.value()));
-      Serial.println(String("IAQ : ") + String(bsec.iaq()));
-      Serial.println(String("bVOC : ") + String(bsec.b_voc_eq()));
-      Serial.println(String("CO2 : ") + String(bsec.co2_eq()));
-      Serial.println(String("Activity : ") + activity.toString());
+      Step_Characteristic.writeValue(stepCounter.value());
+
+      PRINT_2("temp: ",temp.value());
     }
   }
-  
-  // //An alternative, simpler, but blocking way to handle connections (less ideal for
-  // //continuous sensor reading):
-  // //BLE.poll(); 
-  // BLEDevice central = BLE.central(); // This line blocks until a connection is made
-  // Serial.println("Waitting for connection");
-  // if (central) {
-  //   Serial.print("Connected to central: ");
-  //   nicla::leds.setColor(blue);
-  //   Serial.println(central.address());
-  //   
-  //   while (central.connected()) {
-  //     BHY2.update();
-  //     float tempF = 1.8 * temp.value() + 32.0;
-  //     temp_Characteristic.writeValue(tempF);
-  //     Serial.println("T: "+ String(tempF));
-  //     delay(100);
-  //   }
-  //
-  //   Serial.print("Disconnected from central: ");
-  //   nicla::leds.setColor(red);
-  //   Serial.println(central.address());
-  // }
+
 }
