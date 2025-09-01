@@ -1,3 +1,23 @@
 # BLE_con_ARDUINO
+Here is the BLE_con.ino file for Nicla Sense Me "hiking app" project 
 
-Here is .ino file for arduino Nicla Sense ME
+## Installation
+Download [arduino IDE](https://www.arduino.cc/en/software/).
+
+Download Board:
+1. ``Boards Manager``->``ArduinoMbed OS Nicla Boards``
+
+Download Libraries:
+1. ``Library Manager``->``Arduino_BHY2``
+2. ``Library Manager``->``Arduino_BLE``
+3. ``Sketch``->``Include Library``->``Add .Zip Library``, then select the downloaded Arduino-MemoryFree.zip from this git
+
+Arduino-MemoryFree Example :
+
+``File``->``Examples``->``Arduino-MemoryFree``
+
+
+Upload Code:
+1. ``Tools``->``Board``->``ArduinoMbed OS Nicla Boards``->``Arduino Nicla Sense ME``
+2. ``Tools``->``Port``, select port where nicla sense me is connected to
+
