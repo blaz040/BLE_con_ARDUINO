@@ -10,7 +10,7 @@ Download Board:
 Download Libraries:
 1. ``Library Manager``->``Arduino_BHY2``
 2. ``Library Manager``->``Arduino_BLE``
-3. ``Sketch``->``Include Library``->``Add .Zip Library``, then select the downloaded Arduino-MemoryFree.zip from this git
+3. (only needed for printFreeRAM())``Sketch``->``Include Library``->``Add .Zip Library``, then select the downloaded Arduino-MemoryFree.zip from this git
 
 Arduino-MemoryFree Example :
 
@@ -20,4 +20,5 @@ Arduino-MemoryFree Example :
 Upload Code:
 1. ``Tools``->``Board``->``ArduinoMbed OS Nicla Boards``->``Arduino Nicla Sense ME``
 2. ``Tools``->``Port``, select port where nicla sense me is connected to
+3. Click ``Upload``
 
