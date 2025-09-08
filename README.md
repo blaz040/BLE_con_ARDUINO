@@ -2,7 +2,11 @@
 Here is the BLE_con.ino file for Nicla Sense Me "hiking app" project 
 
 ## Installation
-Download [arduino IDE](https://www.arduino.cc/en/software/).
+Download [Arduino IDE](https://www.arduino.cc/en/software/).
+
+
+In Arduino IDE do:
+
 
 Download Board:
 1. ``Boards Manager``->``ArduinoMbed OS Nicla Boards``
